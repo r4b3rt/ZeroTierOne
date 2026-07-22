@@ -1,59 +1,43 @@
-/*
- * Copyright (c)2019 ZeroTier, Inc.
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  *
- * Use of this software is governed by the Business Source License included
- * in the LICENSE.TXT file in the project's root directory.
- *
- * Change Date: 2023-01-01
- *
- * On the date above, in accordance with the Business Source License, use
- * of this software will be governed by version 2.0 of the Apache License.
+ * (c) ZeroTier, Inc.
+ * https://www.zerotier.com/
  */
-/****/
 
 #ifndef ZT_NETWORKCONFIG_HPP
 #define ZT_NETWORKCONFIG_HPP
 
-#include <stdint.h>
-#include <string.h>
-#include <stdlib.h>
-
-#include <vector>
-#include <stdexcept>
-#include <algorithm>
-
 #include "../include/ZeroTierOne.h"
-
-#include "Constants.hpp"
-#include "Buffer.hpp"
-#include "InetAddress.hpp"
-#include "MulticastGroup.hpp"
 #include "Address.hpp"
+#include "Capability.hpp"
 #include "CertificateOfMembership.hpp"
 #include "CertificateOfOwnership.hpp"
-#include "Capability.hpp"
-#include "Tag.hpp"
 #include "Dictionary.hpp"
 #include "Hashtable.hpp"
-#include "Identity.hpp"
-#include "Utils.hpp"
+#include "InetAddress.hpp"
+#include "Tag.hpp"
 #include "Trace.hpp"
 
-/**
- * Default maximum time delta for COMs, tags, and capabilities
- *
- * The current value is two hours, providing ample time for a controller to
- * experience fail-over, etc.
- */
-#define ZT_NETWORKCONFIG_DEFAULT_CREDENTIAL_TIME_MAX_MAX_DELTA 7200000ULL
+#include <stdint.h>
+#include <stdlib.h>
+#include <vector>
 
 /**
- * Default minimum credential TTL and maxDelta for COM timestamps
- *
- * This is just slightly over three minutes and provides three retries for
- * all currently online members to refresh.
+ * Default time delta for COMs, tags, and capabilities
  */
-#define ZT_NETWORKCONFIG_DEFAULT_CREDENTIAL_TIME_MIN_MAX_DELTA 185000ULL
+#define ZT_NETWORKCONFIG_DEFAULT_CREDENTIAL_TIME_DFL_MAX_DELTA ((int64_t)(1000 * 60 * 30))
+
+/**
+ * Maximum time delta for COMs, tags, and capabilities
+ */
+#define ZT_NETWORKCONFIG_DEFAULT_CREDENTIAL_TIME_MAX_MAX_DELTA ((int64_t)(1000 * 60 * 60 * 2))
+
+/**
+ * Minimum credential TTL and maxDelta for COM timestamps
+ */
+#define ZT_NETWORKCONFIG_DEFAULT_CREDENTIAL_TIME_MIN_MAX_DELTA ((int64_t)(1000 * 60 * 5))
 
 /**
  * Flag: enable broadcast
@@ -71,7 +55,7 @@
 #define ZT_NETWORKCONFIG_FLAG_RULES_RESULT_OF_UNSUPPORTED_MATCH 0x0000000000000008ULL
 
 /**
- * Flag: disable frame compression
+ * Flag: disable frame compression (unused, now always disabled)
  */
 #define ZT_NETWORKCONFIG_FLAG_DISABLE_COMPRESSION 0x0000000000000010ULL
 
@@ -81,19 +65,23 @@
 #define ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE 0x0000020000000000ULL
 
 /**
- * Anchors are stable devices on this network that can act like roots when none are up
- */
-#define ZT_NETWORKCONFIG_SPECIALIST_TYPE_ANCHOR 0x0000040000000000ULL
-
-/**
  * Designated multicast replicators replicate multicast in place of sender-side replication
+ *
+ * This is currently not really used.
  */
 #define ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR 0x0000080000000000ULL
+
+/**
+ * Designated per-network relays
+ */
+#define ZT_NETWORKCONFIG_SPECIALIST_TYPE_NETWORK_RELAY 0x0000100000000000ULL
 
 namespace ZeroTier {
 
 // Dictionary capacity needed for max size network config
-#define ZT_NETWORKCONFIG_DICT_CAPACITY (1024 + (sizeof(ZT_VirtualNetworkRule) * ZT_MAX_NETWORK_RULES) + (sizeof(Capability) * ZT_MAX_NETWORK_CAPABILITIES) + (sizeof(Tag) * ZT_MAX_NETWORK_TAGS) + (sizeof(CertificateOfOwnership) * ZT_MAX_CERTIFICATES_OF_OWNERSHIP))
+#define ZT_NETWORKCONFIG_DICT_CAPACITY                                                                                                                                                                                                         \
+	((4096 + 2048) + (sizeof(ZT_VirtualNetworkConfig)) + (sizeof(ZT_VirtualNetworkRule) * ZT_MAX_NETWORK_RULES) + (sizeof(Capability) * ZT_MAX_NETWORK_CAPABILITIES) + (sizeof(Tag) * ZT_MAX_NETWORK_TAGS)                                              \
+	 + (sizeof(CertificateOfOwnership) * ZT_MAX_CERTIFICATES_OF_OWNERSHIP))
 
 // Dictionary capacity needed for max size network meta-data
 #define ZT_NETWORKCONFIG_METADATA_DICT_CAPACITY 1024
@@ -105,6 +93,8 @@ namespace ZeroTier {
 
 // Network config version
 #define ZT_NETWORKCONFIG_REQUEST_METADATA_KEY_VERSION "v"
+// Network config version
+#define ZT_NETWORKCONFIG_REQUEST_METADATA_KEY_OS_ARCH "o"
 // Protocol version (see Packet.hpp)
 #define ZT_NETWORKCONFIG_REQUEST_METADATA_KEY_PROTOCOL_VERSION "pv"
 // Software vendor
@@ -175,6 +165,47 @@ namespace ZeroTier {
 #define ZT_NETWORKCONFIG_DICT_KEY_TAGS "TAG"
 // tags (binary blobs)
 #define ZT_NETWORKCONFIG_DICT_KEY_CERTIFICATES_OF_OWNERSHIP "COO"
+// dns (binary blobs)
+#define ZT_NETWORKCONFIG_DICT_KEY_DNS "DNS"
+// sso enabled
+#define ZT_NETWORKCONFIG_DICT_KEY_SSO_ENABLED "ssoe"
+// so version
+#define ZT_NETWORKCONFIG_DICT_KEY_SSO_VERSION "ssov"
+// authentication URL
+#define ZT_NETWORKCONFIG_DICT_KEY_AUTHENTICATION_URL "aurl"
+// authentication expiry
+#define ZT_NETWORKCONFIG_DICT_KEY_AUTHENTICATION_EXPIRY_TIME "aexpt"
+// oidc issuer URL
+#define ZT_NETWORKCONFIG_DICT_KEY_ISSUER_URL "iurl"
+// central endpoint
+#define ZT_NETWORKCONFIG_DICT_KEY_CENTRAL_ENDPOINT_URL "ssoce"
+// nonce
+#define ZT_NETWORKCONFIG_DICT_KEY_NONCE "sson"
+// state
+#define ZT_NETWORKCONFIG_DICT_KEY_STATE "ssos"
+// client ID
+#define ZT_NETWORKCONFIG_DICT_KEY_CLIENT_ID "ssocid"
+// SSO Provider
+#define ZT_NETWORKCONFIG_DICT_KEY_SSO_PROVIDER "ssop"
+
+// AuthInfo fields -- used by ncSendError for sso
+
+// AuthInfo Version
+#define ZT_AUTHINFO_DICT_KEY_VERSION "aV"
+// authentication URL
+#define ZT_AUTHINFO_DICT_KEY_AUTHENTICATION_URL "aU"
+// issuer URL
+#define ZT_AUTHINFO_DICT_KEY_ISSUER_URL "iU"
+// Central endpoint URL
+#define ZT_AUTHINFO_DICT_KEY_CENTRAL_ENDPOINT_URL "aCU"
+// Nonce
+#define ZT_AUTHINFO_DICT_KEY_NONCE "aN"
+// State
+#define ZT_AUTHINFO_DICT_KEY_STATE "aS"
+// Client ID
+#define ZT_AUTHINFO_DICT_KEY_CLIENT_ID "aCID"
+// SSO Provider
+#define ZT_AUTHINFO_DICT_KEY_SSO_PROVIDER "aSSOp"
 
 // Legacy fields -- these are obsoleted but are included when older clients query
 
@@ -205,30 +236,17 @@ namespace ZeroTier {
  * This is a memcpy()'able structure and is safe (in a crash sense) to modify
  * without locks.
  */
-class NetworkConfig
-{
-public:
-	NetworkConfig() :
-		networkId(0),
-		timestamp(0),
-		credentialTimeMaxDelta(0),
-		revision(0),
-		issuedTo(),
-		remoteTraceTarget(),
-		flags(0),
-		remoteTraceLevel(Trace::LEVEL_NORMAL),
-		mtu(0),
-		multicastLimit(0),
-		specialistCount(0),
-		routeCount(0),
-		staticIpCount(0),
-		ruleCount(0),
-		capabilityCount(0),
-		tagCount(0),
-		certificateOfOwnershipCount(0),
-		type(ZT_NETWORK_TYPE_PRIVATE)
+class NetworkConfig {
+  public:
+	NetworkConfig();
+
+	inline bool operator==(const NetworkConfig& nc) const
 	{
-		name[0] = 0;
+		return (memcmp(this, &nc, sizeof(NetworkConfig)) == 0);
+	}
+	inline bool operator!=(const NetworkConfig& nc) const
+	{
+		return (! (*this == nc));
 	}
 
 	/**
@@ -238,7 +256,7 @@ public:
 	 * @param includeLegacy If true, include legacy fields for old node versions
 	 * @return True if dictionary was successfully created, false if e.g. overflow
 	 */
-	bool toDictionary(Dictionary<ZT_NETWORKCONFIG_DICT_CAPACITY> &d,bool includeLegacy) const;
+	bool toDictionary(Dictionary<ZT_NETWORKCONFIG_DICT_CAPACITY>& d, bool includeLegacy) const;
 
 	/**
 	 * Read this network config from a dictionary
@@ -246,43 +264,39 @@ public:
 	 * @param d Dictionary (non-const since it might be modified during parse, should not be used after call)
 	 * @return True if dictionary was valid and network config successfully initialized
 	 */
-	bool fromDictionary(const Dictionary<ZT_NETWORKCONFIG_DICT_CAPACITY> &d);
+	bool fromDictionary(const Dictionary<ZT_NETWORKCONFIG_DICT_CAPACITY>& d);
 
 	/**
 	 * @return True if broadcast (ff:ff:ff:ff:ff:ff) address should work on this network
 	 */
-	inline bool enableBroadcast() const { return ((this->flags & ZT_NETWORKCONFIG_FLAG_ENABLE_BROADCAST) != 0); }
+	inline bool enableBroadcast() const
+	{
+		return ((this->flags & ZT_NETWORKCONFIG_FLAG_ENABLE_BROADCAST) != 0);
+	}
 
 	/**
 	 * @return True if IPv6 NDP emulation should be allowed for certain "magic" IPv6 address patterns
 	 */
-	inline bool ndpEmulation() const { return ((this->flags & ZT_NETWORKCONFIG_FLAG_ENABLE_IPV6_NDP_EMULATION) != 0); }
-
-	/**
-	 * @return True if frames should not be compressed
-	 */
-	inline bool disableCompression() const
+	inline bool ndpEmulation() const
 	{
-#ifndef ZT_DISABLE_COMPRESSION
-		return ((this->flags & ZT_NETWORKCONFIG_FLAG_DISABLE_COMPRESSION) != 0);
-#else
-		/* Compression is disabled for libzt builds since it causes non-obvious chaotic
-		interference with lwIP's TCP congestion algorithm. Compression is also disabled
-		for some NAS builds due to the usage of low-performance processors in certain
-		older and budget models. */
-		return false;
-#endif
+		return ((this->flags & ZT_NETWORKCONFIG_FLAG_ENABLE_IPV6_NDP_EMULATION) != 0);
 	}
 
 	/**
 	 * @return Network type is public (no access control)
 	 */
-	inline bool isPublic() const { return (this->type == ZT_NETWORK_TYPE_PUBLIC); }
+	inline bool isPublic() const
+	{
+		return (this->type == ZT_NETWORK_TYPE_PUBLIC);
+	}
 
 	/**
 	 * @return Network type is private (certificate access control)
 	 */
-	inline bool isPrivate() const { return (this->type == ZT_NETWORK_TYPE_PRIVATE); }
+	inline bool isPrivate() const
+	{
+		return (this->type == ZT_NETWORK_TYPE_PRIVATE);
+	}
 
 	/**
 	 * @return ZeroTier addresses of devices on this network designated as active bridges
@@ -290,9 +304,10 @@ public:
 	inline std::vector<Address> activeBridges() const
 	{
 		std::vector<Address> r;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0)
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0) {
 				r.push_back(Address(specialists[i]));
+			}
 		}
 		return r;
 	}
@@ -300,38 +315,31 @@ public:
 	inline unsigned int activeBridges(Address ab[ZT_MAX_NETWORK_SPECIALISTS]) const
 	{
 		unsigned int c = 0;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0)
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0) {
 				ab[c++] = specialists[i];
+			}
 		}
 		return c;
 	}
 
-	inline bool isActiveBridge(const Address &a) const
+	inline bool isActiveBridge(const Address& a) const
 	{
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if (((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0)&&(a == specialists[i]))
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if (((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0) && (a == specialists[i])) {
 				return true;
+			}
 		}
 		return false;
-	}
-
-	inline std::vector<Address> anchors() const
-	{
-		std::vector<Address> r;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ANCHOR) != 0)
-				r.push_back(Address(specialists[i]));
-		}
-		return r;
 	}
 
 	inline std::vector<Address> multicastReplicators() const
 	{
 		std::vector<Address> r;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR) != 0)
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR) != 0) {
 				r.push_back(Address(specialists[i]));
+			}
 		}
 		return r;
 	}
@@ -339,18 +347,20 @@ public:
 	inline unsigned int multicastReplicators(Address mr[ZT_MAX_NETWORK_SPECIALISTS]) const
 	{
 		unsigned int c = 0;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR) != 0)
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR) != 0) {
 				mr[c++] = specialists[i];
+			}
 		}
 		return c;
 	}
 
-	inline bool isMulticastReplicator(const Address &a) const
+	inline bool isMulticastReplicator(const Address& a) const
 	{
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if (((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR) != 0)&&(a == specialists[i]))
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if (((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR) != 0) && (a == specialists[i])) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -358,9 +368,10 @@ public:
 	inline std::vector<Address> alwaysContactAddresses() const
 	{
 		std::vector<Address> r;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & (ZT_NETWORKCONFIG_SPECIALIST_TYPE_ANCHOR | ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR)) != 0)
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & (ZT_NETWORKCONFIG_SPECIALIST_TYPE_NETWORK_RELAY | ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR)) != 0) {
 				r.push_back(Address(specialists[i]));
+			}
 		}
 		return r;
 	}
@@ -368,17 +379,18 @@ public:
 	inline unsigned int alwaysContactAddresses(Address ac[ZT_MAX_NETWORK_SPECIALISTS]) const
 	{
 		unsigned int c = 0;
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & (ZT_NETWORKCONFIG_SPECIALIST_TYPE_ANCHOR | ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR)) != 0)
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & (ZT_NETWORKCONFIG_SPECIALIST_TYPE_NETWORK_RELAY | ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR)) != 0) {
 				ac[c++] = specialists[i];
+			}
 		}
 		return c;
 	}
 
-	inline void alwaysContactAddresses(Hashtable< Address,std::vector<InetAddress> > &a) const
+	inline void alwaysContactAddresses(Hashtable<Address, std::vector<InetAddress> >& a) const
 	{
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((specialists[i] & (ZT_NETWORKCONFIG_SPECIALIST_TYPE_ANCHOR | ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR)) != 0) {
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((specialists[i] & (ZT_NETWORKCONFIG_SPECIALIST_TYPE_NETWORK_RELAY | ZT_NETWORKCONFIG_SPECIALIST_TYPE_MULTICAST_REPLICATOR)) != 0) {
 				a[Address(specialists[i])];
 			}
 		}
@@ -388,18 +400,20 @@ public:
 	 * @param fromPeer Peer attempting to bridge other Ethernet peers onto network
 	 * @return True if this network allows bridging
 	 */
-	inline bool permitsBridging(const Address &fromPeer) const
+	inline bool permitsBridging(const Address& fromPeer) const
 	{
-		for(unsigned int i=0;i<specialistCount;++i) {
-			if ((fromPeer == specialists[i])&&((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0))
+		for (unsigned int i = 0; i < specialistCount; ++i) {
+			if ((fromPeer == specialists[i]) && ((specialists[i] & ZT_NETWORKCONFIG_SPECIALIST_TYPE_ACTIVE_BRIDGE) != 0)) {
 				return true;
+			}
 		}
 		return false;
 	}
 
-	inline operator bool() const { return (networkId != 0); }
-	inline bool operator==(const NetworkConfig &nc) const { return (memcmp(this,&nc,sizeof(NetworkConfig)) == 0); }
-	inline bool operator!=(const NetworkConfig &nc) const { return (!(*this == nc)); }
+	inline operator bool() const
+	{
+		return (networkId != 0);
+	}
 
 	/**
 	 * Add a specialist or mask flags if already present
@@ -411,10 +425,10 @@ public:
 	 * @param f Flags (OR of specialist role/type flags)
 	 * @return True if successfully masked or added
 	 */
-	inline bool addSpecialist(const Address &a,const uint64_t f)
+	inline bool addSpecialist(const Address& a, const uint64_t f)
 	{
 		const uint64_t aint = a.toInt();
-		for(unsigned int i=0;i<specialistCount;++i) {
+		for (unsigned int i = 0; i < specialistCount; ++i) {
 			if ((specialists[i] & 0xffffffffffULL) == aint) {
 				specialists[i] |= f;
 				return true;
@@ -427,22 +441,24 @@ public:
 		return false;
 	}
 
-	const Capability *capability(const uint32_t id) const
+	const Capability* capability(const uint32_t id) const
 	{
-		for(unsigned int i=0;i<capabilityCount;++i) {
-			if (capabilities[i].id() == id)
+		for (unsigned int i = 0; i < capabilityCount; ++i) {
+			if (capabilities[i].id() == id) {
 				return &(capabilities[i]);
+			}
 		}
-		return (Capability *)0;
+		return (Capability*)0;
 	}
 
-	const Tag *tag(const uint32_t id) const
+	const Tag* tag(const uint32_t id) const
 	{
-		for(unsigned int i=0;i<tagCount;++i) {
-			if (tags[i].id() == id)
+		for (unsigned int i = 0; i < tagCount; ++i) {
+			if (tags[i].id() == id) {
 				return &(tags[i]);
+			}
 		}
-		return (Tag *)0;
+		return (Tag*)0;
 	}
 
 	/**
@@ -546,7 +562,7 @@ public:
 	/**
 	 * Static IP assignments
 	 */
-	InetAddress staticIps[ZT_MAX_ZT_ASSIGNED_ADDRESSES];
+	InetAddress staticIps[ZT_MAX_ZT_ASSIGNED_ADDRESSES] = {};
 
 	/**
 	 * Base network rules
@@ -582,8 +598,74 @@ public:
 	 * Certificate of membership (for private networks)
 	 */
 	CertificateOfMembership com;
+
+	/**
+	 * Number of ZT-pushed DNS configurations
+	 */
+	unsigned int dnsCount;
+
+	/**
+	 * ZT pushed DNS configuration
+	 */
+	ZT_VirtualNetworkDNS dns;
+
+	/**
+	 * SSO enabled flag.
+	 */
+	bool ssoEnabled;
+
+	/**
+	 * SSO version
+	 */
+	uint64_t ssoVersion;
+
+	/**
+	 * Authentication URL if authentication is required
+	 */
+	char authenticationURL[2048];
+
+	/**
+	 * Time current authentication expires or 0 if external authentication is disabled
+	 *
+	 * Not used if authVersion >= 1
+	 */
+	uint64_t authenticationExpiryTime;
+
+	/**
+	 * OIDC issuer URL
+	 */
+	char issuerURL[2048];
+
+	/**
+	 * central base URL.
+	 */
+	char centralAuthURL[2048];
+
+	/**
+	 * sso nonce
+	 */
+	char ssoNonce[128];
+
+	/**
+	 * sso state
+	 */
+	char ssoState[256];
+
+	/**
+	 * oidc client id
+	 */
+	char ssoClientID[256];
+
+	/**
+	 * oidc provider
+	 *
+	 * because certain providers require specific scopes to be requested
+	 * and others to be not requested in order to make everything work
+	 * correctly
+	 **/
+	char ssoProvider[64];
 };
 
-} // namespace ZeroTier
+}	// namespace ZeroTier
 
 #endif

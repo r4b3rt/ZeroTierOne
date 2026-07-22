@@ -6,11 +6,19 @@
 /zerotier
 /nltest
 
+# IDE and dev tool stuff
+/.idea
+/.nova
+/compile_commands.json
+/.claude
+/.aider
+
 # OS-created garbage files from various platforms
 .DS_Store
 .Apple*
 Thumbs.db
 @eaDir
+lost+found
 ._*
 
 # Windows build droppings
@@ -30,10 +38,8 @@ Thumbs.db
 /windows/WebUIWrapper/obj
 /windows/lib
 /ext/installfiles/windows/ZeroTier One-SetupFiles
-/ext/installfiles/windows/Prerequisites
 /ext/installfiles/windows/*-cache
 /ZeroTier One.msi
-/windows/.vs
 *.vcxproj.backup
 /windows/TapDriver6/Win7Debug
 /windows/TapDriver6/win7Release
@@ -42,6 +48,7 @@ Thumbs.db
 enc_temp_folder
 /windows/copyutil/bin
 /windows/copyutil/obj
+.vs/
 
 # *nix/Mac build droppings
 /build-*
@@ -54,11 +61,13 @@ zt1-src.tar.gz
 /MacEthernetTapAgent
 
 # Miscellaneous temporaries, build files, etc.
+ext/installfiles/windows/*.back*.aip
+tcp-proxy/tcp-proxy
+rustybits/target
 *.log
 *.opensdf
 *.user
 *.cache
-*.obj
 *.tlog
 *.pid
 *.pkg
@@ -82,6 +91,7 @@ debian/zerotier-one*.debhelper
 debian/*.log
 debian/zerotier-one.substvars
 root-watcher/config.json
+build/
 
 # Java/Android/JNI build droppings
 java/obj/
@@ -97,13 +107,12 @@ windows/WinUI/bin/
 windows/ZeroTierOne/Debug/
 /ext/installfiles/windows/chocolatey/zerotier-one/*.nupkg
 
+
 # Miscellaneous mac/Xcode droppings
-.DS_Store
 .Trashes
 *.swp
 *~.nib
 DerivedData/
-build/
 *.pbxuser
 *.mode1v3
 *.mode2v3
@@ -114,10 +123,31 @@ build/
 !default.perspectivev3
 *.xccheckout
 xcuserdata/
-ext/librethinkdbxx/build
 .vscode
 __pycache__
 *~
 attic/world/*.c25519
 attic/world/mkworld
 workspace/
+workspace2/
+zeroidc/target/
+tcp-proxy/target
+
+# Snapcraft Linux build stuff
+/parts/
+/stage/
+/prime/
+*.snap
+.snapcraft
+__pycache__
+*.pyc
+*_source.tar.bz2
+snap/.snapcraft
+build/
+
+# Local dependency bootstrap output (scripts/bootstrap-deps.sh): the install
+# prefix and the build/clone scratch dir. Large + host-specific; never commit.
+.deps/
+.deps-build/
+
+.claude/*.local.*

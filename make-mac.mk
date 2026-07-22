@@ -1,15 +1,19 @@
 CC=clang
 CXX=clang++
-INCLUDES=
+TOPDIR=$(shell pwd)
+
+INCLUDES=-I$(shell pwd)/rustybits/target -isystem $(TOPDIR)/ext  -I$(TOPDIR)/ext/prometheus-cpp-lite-1.0/core/include -I$(TOPDIR)/ext-prometheus-cpp-lite-1.0/3rdparty/http-client-lite/include -I$(TOPDIR)/ext/prometheus-cpp-lite-1.0/simpleapi/include
 DEFS=
 LIBS=
-ARCH_FLAGS=
+ARCH_FLAGS=-arch x86_64 -arch arm64
+
 CODESIGN=echo
 PRODUCTSIGN=echo
 CODESIGN_APP_CERT=
 CODESIGN_INSTALLER_CERT=
 NOTARIZE=echo
-NOTARIZE_USER_ID=null
+NOTARIZE_APPLE_ID=null
+NOTARIZE_TEAM_ID=null
 
 ZT_BUILD_PLATFORM=3
 ZT_BUILD_ARCHITECTURE=2
@@ -24,92 +28,109 @@ TIMESTAMP=$(shell date +"%Y%m%d%H%M")
 DEFS+=-DZT_BUILD_PLATFORM=$(ZT_BUILD_PLATFORM) -DZT_BUILD_ARCHITECTURE=$(ZT_BUILD_ARCHITECTURE)
 
 include objects.mk
-ONE_OBJS+=osdep/MacEthernetTap.o osdep/MacKextEthernetTap.o ext/http-parser/http_parser.o
+ONE_OBJS+=osdep/MacEthernetTap.o osdep/MacKextEthernetTap.o osdep/MacDNSHelper.o ext/http-parser/http_parser.o
+LIBS+=-framework CoreServices -framework SystemConfiguration -framework CoreFoundation -framework Security
 
-ifeq ($(ZT_CONTROLLER),1)
-	LIBS+=-L/usr/local/opt/libpq/lib -lpq -Lext/librabbitmq/macos/lib -lrabbitmq
-	DEFS+=-DZT_CONTROLLER_USE_LIBPQ -DZT_CONTROLLER
-	INCLUDES+=-Iext/librabbitmq/macos/include -I/usr/local/opt/libpq/include
-endif
+EXTRA_CARGO_FLAGS?=
 
-# Official releases are signed with our Apple cert and apply software updates by default
 ifeq ($(ZT_OFFICIAL_RELEASE),1)
-	DEFS+=-DZT_SOFTWARE_UPDATE_DEFAULT="\"apply\""
 	ZT_USE_MINIUPNPC=1
 	CODESIGN=codesign
 	PRODUCTSIGN=productsign
 	CODESIGN_APP_CERT="Developer ID Application: ZeroTier, Inc (8ZD9JUCZ4V)"
 	CODESIGN_INSTALLER_CERT="Developer ID Installer: ZeroTier, Inc (8ZD9JUCZ4V)"
-	NOTARIZE=xcrun altool
-	NOTARIZE_USER_ID="adam.ierymenko@gmail.com"
-else
-	DEFS+=-DZT_SOFTWARE_UPDATE_DEFAULT="\"download\""
+	NOTARIZE=xcrun notarytool
+	NOTARIZE_APPLE_ID="adam.ierymenko@gmail.com"
+	NOTARIZE_TEAM_ID="8ZD9JUCZ4V"
 endif
 
 # Use fast ASM Salsa20/12 for x64 processors
-DEFS+=-DZT_USE_X64_ASM_SALSA2012
+override DEFS+=-DZT_USE_X64_ASM_SALSA2012
 CORE_OBJS+=ext/x64-salsa2012-asm/salsa2012.o
+CXXFLAGS=$(CFLAGS) -std=c++17 -stdlib=libc++
 
 # Build miniupnpc and nat-pmp as included libraries -- extra defs are required for these sources
-DEFS+=-DMACOSX -DZT_USE_MINIUPNPC -DMINIUPNP_STATICLIB -D_DARWIN_C_SOURCE -DMINIUPNPC_SET_SOCKET_TIMEOUT -DMINIUPNPC_GET_SRC_ADDR -D_BSD_SOURCE -D_DEFAULT_SOURCE -DOS_STRING=\"Darwin/15.0.0\" -DMINIUPNPC_VERSION_STRING=\"2.0\" -DUPNP_VERSION_STRING=\"UPnP/1.1\" -DENABLE_STRNATPMPERR
+override DEFS+=-DMACOSX -DZT_SSO_SUPPORTED -DZT_USE_MINIUPNPC -DMINIUPNP_STATICLIB -D_DARWIN_C_SOURCE -DMINIUPNPC_SET_SOCKET_TIMEOUT -DMINIUPNPC_GET_SRC_ADDR -D_BSD_SOURCE -D_DEFAULT_SOURCE -DOS_STRING=\"Darwin/15.0.0\" -DMINIUPNPC_VERSION_STRING=\"2.0\" -DUPNP_VERSION_STRING=\"UPnP/1.1\" -DENABLE_STRNATPMPERR
 ONE_OBJS+=ext/libnatpmp/natpmp.o ext/libnatpmp/getgateway.o ext/miniupnpc/connecthostport.o ext/miniupnpc/igd_desc_parse.o ext/miniupnpc/minisoap.o ext/miniupnpc/minissdpc.o ext/miniupnpc/miniupnpc.o ext/miniupnpc/miniwget.o ext/miniupnpc/minixml.o ext/miniupnpc/portlistingparse.o ext/miniupnpc/receivedata.o ext/miniupnpc/upnpcommands.o ext/miniupnpc/upnpdev.o ext/miniupnpc/upnperrors.o ext/miniupnpc/upnpreplyparse.o osdep/PortMapper.o
+MACOS_VERSION_MIN=10.13
 
 # Build with address sanitization library for advanced debugging (clang)
 ifeq ($(ZT_SANITIZE),1)
-	DEFS+=-fsanitize=address -DASAN_OPTIONS=symbolize=1
+	override DEFS+=-fsanitize=address -DASAN_OPTIONS=symbolize=1
 endif
 ifeq ($(ZT_DEBUG_TRACE),1)
-	DEFS+=-DZT_DEBUG_TRACE
+	override DEFS+=-DZT_DEBUG_TRACE
 endif
 # Debug mode -- dump trace output, build binary with -g
 ifeq ($(ZT_DEBUG),1)
 	ZT_TRACE=1
-	CFLAGS+=-Wall -g $(INCLUDES) $(DEFS)
+	ARCH_FLAGS=
+	CFLAGS+=-Wall -g $(INCLUDES) $(DEFS) $(ARCH_FLAGS)
 	STRIP=echo
+	RUST_VARIANT=debug
 	# The following line enables optimization for the crypto code, since
 	# C25519 in particular is almost UNUSABLE in heavy testing without it.
 node/Salsa20.o node/SHA512.o node/C25519.o node/Poly1305.o: CFLAGS = -Wall -O2 -g $(INCLUDES) $(DEFS)
 else
-	CFLAGS?=-Ofast -fstack-protector-strong
-	CFLAGS+=$(ARCH_FLAGS) -Wall -flto -fPIE -mmacosx-version-min=10.7 -DNDEBUG -Wno-unused-private-field $(INCLUDES) $(DEFS)
+	CFLAGS?=-O3 -fstack-protector-strong
+	CFLAGS+=$(ARCH_FLAGS) -Wall -flto -fPIE -mmacosx-version-min=$(MACOS_VERSION_MIN) -DNDEBUG -Wno-unused-private-field $(INCLUDES) $(DEFS)
 	STRIP=strip
+	EXTRA_CARGO_FLAGS+=--release
+	RUST_VARIANT=release
 endif
 
 ifeq ($(ZT_TRACE),1)
-	DEFS+=-DZT_TRACE
+	override DEFS+=-DZT_TRACE
+endif
+
+ifeq ($(ZT_DEBUG),1)
+	override DEFS+=-DZT_DEBUG
 endif
 
 ifeq ($(ZT_VAULT_SUPPORT),1)
-	DEFS+=-DZT_VAULT_SUPPORT=1
+	override DEFS+=-DZT_VAULT_SUPPORT=1
 	LIBS+=-lcurl
 endif
 
-CXXFLAGS=$(CFLAGS) -std=c++11 -stdlib=libc++
+# OpenTelemetry: the make build uses the header-only API only. The controller is
+# built via CMake (scripts/bootstrap-deps.sh); the make-based controller OTel build
+# was retired.
+OTEL_INSTALL_DIR=ext/opentelemetry-cpp-api-only
+INCLUDES+=-I${OTEL_INSTALL_DIR}/include
 
-all: one macui
+all: one
 
 ext/x64-salsa2012-asm/salsa2012.o:
-	$(CC) $(CFLAGS) -c ext/x64-salsa2012-asm/salsa2012.s -o ext/x64-salsa2012-asm/salsa2012.o
+	as -arch x86_64 -mmacosx-version-min=$(MACOS_VERSION_MIN) -o ext/x64-salsa2012-asm/salsa2012.o ext/x64-salsa2012-asm/salsa2012.s
 
 mac-agent: FORCE
-	$(CC) -Ofast -o MacEthernetTapAgent osdep/MacEthernetTapAgent.c
-	$(CODESIGN) -f -s $(CODESIGN_APP_CERT) MacEthernetTapAgent
+	$(CC) -O3 $(ARCH_FLAGS) -mmacosx-version-min=$(MACOS_VERSION_MIN) -o MacEthernetTapAgent osdep/MacEthernetTapAgent.c
+	$(CODESIGN) -f --options=runtime -s $(CODESIGN_APP_CERT) MacEthernetTapAgent
 
-one:	$(CORE_OBJS) $(ONE_OBJS) one.o mac-agent
-	$(CXX) $(CXXFLAGS) -o zerotier-one $(CORE_OBJS) $(ONE_OBJS) one.o $(LIBS)
-	$(STRIP) zerotier-one
+osdep/MacDNSHelper.o: osdep/MacDNSHelper.mm
+	$(CXX) $(CXXFLAGS) -c osdep/MacDNSHelper.mm -o osdep/MacDNSHelper.o
+
+one:	otel rustybits $(CORE_OBJS) $(ONE_OBJS) one.o mac-agent
+	$(CXX) $(CXXFLAGS) -o zerotier-one $(CORE_OBJS) $(ONE_OBJS) one.o $(LIBS) rustybits/target/librustybits.a
+	# $(STRIP) zerotier-one
 	ln -sf zerotier-one zerotier-idtool
 	ln -sf zerotier-one zerotier-cli
-	$(CODESIGN) -f -s $(CODESIGN_APP_CERT) zerotier-one
+	$(CODESIGN) -f --options=runtime -s $(CODESIGN_APP_CERT) zerotier-one
 
 zerotier-one: one
 
-central-controller:
-	make ZT_CONTROLLER=1 one
+rustybits: rustybits/target/rustybits.a
+
+rustybits/target/rustybits.a:	FORCE
+	cd rustybits && MACOSX_DEPLOYMENT_TARGET=$(MACOS_VERSION_MIN) cargo build --target=x86_64-apple-darwin $(EXTRA_CARGO_FLAGS)
+	cd rustybits && MACOSX_DEPLOYMENT_TARGET=$(MACOS_VERSION_MIN) cargo build --target=aarch64-apple-darwin $(EXTRA_CARGO_FLAGS)
+	cd rustybits && lipo -create target/x86_64-apple-darwin/$(RUST_VARIANT)/librustybits.a target/aarch64-apple-darwin/$(RUST_VARIANT)/librustybits.a -output target/librustybits.a
 
 zerotier-idtool: one
 
 zerotier-cli: one
+
+$(ONE_OBJS): rustybits
 
 libzerotiercore.a:	$(CORE_OBJS)
 	ar rcs libzerotiercore.a $(CORE_OBJS)
@@ -117,19 +138,15 @@ libzerotiercore.a:	$(CORE_OBJS)
 
 core: libzerotiercore.a
 
-macui:	FORCE
-	cd macui && xcodebuild -target "ZeroTier One" -configuration Release
-	$(CODESIGN) -f -s $(CODESIGN_APP_CERT) "macui/build/Release/ZeroTier One.app"
-
-#cli:	FORCE
-#	$(CXX) $(CXXFLAGS) -o zerotier cli/zerotier.cpp osdep/OSUtils.cpp node/InetAddress.cpp node/Utils.cpp node/Salsa20.cpp node/Identity.cpp node/SHA512.cpp node/C25519.cpp -lcurl
-#	$(STRIP) zerotier
-
 selftest: $(CORE_OBJS) $(ONE_OBJS) selftest.o
-	$(CXX) $(CXXFLAGS) -o zerotier-selftest selftest.o $(CORE_OBJS) $(ONE_OBJS) $(LIBS)
+	$(CXX) $(CXXFLAGS) -o zerotier-selftest selftest.o $(CORE_OBJS) $(ONE_OBJS) $(LIBS) rustybits/target/librustybits.a
 	$(STRIP) zerotier-selftest
 
 zerotier-selftest: selftest
+
+# Make compile_commands.json for clangd editor extensions. Probably works on Linux too.
+compile_commands: FORCE
+	compiledb make ZT_DEBUG=1
 
 # Requires Packages: http://s.sudre.free.fr/Software/Packages/about.html
 mac-dist-pkg: FORCE
@@ -137,23 +154,33 @@ mac-dist-pkg: FORCE
 	rm -f "ZeroTier One Signed.pkg"
 	$(PRODUCTSIGN) --sign $(CODESIGN_INSTALLER_CERT) "ZeroTier One.pkg" "ZeroTier One Signed.pkg"
 	if [ -f "ZeroTier One Signed.pkg" ]; then mv -f "ZeroTier One Signed.pkg" "ZeroTier One.pkg"; fi
-	rm -f zt1_update_$(ZT_BUILD_PLATFORM)_$(ZT_BUILD_ARCHITECTURE)_*
-	cat ext/installfiles/mac-update/updater.tmpl.sh "ZeroTier One.pkg" >zt1_update_$(ZT_BUILD_PLATFORM)_$(ZT_BUILD_ARCHITECTURE)_$(ZT_VERSION_MAJOR).$(ZT_VERSION_MINOR).$(ZT_VERSION_REV)_$(ZT_VERSION_BUILD).exe
-	$(NOTARIZE) -t osx -f "ZeroTier One.pkg" --primary-bundle-id --output-format xml --notarize-app -u $(NOTARIZE_USER_ID)
+	#rm -f zt1_update_$(ZT_BUILD_PLATFORM)_$(ZT_BUILD_ARCHITECTURE)_*
+	#cat ext/installfiles/mac-update/updater.tmpl.sh "ZeroTier One.pkg" >zt1_update_$(ZT_BUILD_PLATFORM)_$(ZT_BUILD_ARCHITECTURE)_$(ZT_VERSION_MAJOR).$(ZT_VERSION_MINOR).$(ZT_VERSION_REV)_$(ZT_VERSION_BUILD).exe
+	$(NOTARIZE) submit --apple-id "adam.ierymenko@gmail.com" --team-id "8ZD9JUCZ4V" --wait "ZeroTier One.pkg"
 	echo '*** When Apple notifies that the app is notarized, run: xcrun stapler staple "ZeroTier One.pkg"'
 
 # For ZeroTier, Inc. to build official signed packages
 official: FORCE
+	cd ../DesktopUI ; make ZT_OFFICIAL_RELEASE=1
 	make clean
-	make ZT_OFFICIAL_RELEASE=1 -j 8 one
-	make ZT_OFFICIAL_RELEASE=1 macui
+	make ZT_OFFICIAL_RELEASE=1 -j 8 one ZT_NONFREE=1
 	make ZT_OFFICIAL_RELEASE=1 mac-dist-pkg
 
-central-controller-docker: FORCE
-	docker build -t docker.zerotier.com/zerotier-central/ztcentral-controller:${TIMESTAMP} -f ext/central-controller-docker/Dockerfile --build-arg git_branch=$(shell git name-rev --name-only HEAD) .
+_buildx:
+	@echo "docker buildx create"
+	# docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+	docker run --privileged --rm tonistiigi/binfmt --install all
+	@echo docker buildx create --name multiarch --driver docker-container --use
+	@echo docker buildx inspect --bootstrap
+
+docker-release:	_buildx
+	docker buildx build --platform linux/386,linux/amd64,linux/arm/v7,linux/arm64,linux/mips64le,linux/ppc64le,linux/s390x -t zerotier/zerotier:${RELEASE_DOCKER_TAG} -t zerotier/zerotier:latest --build-arg VERSION=${RELEASE_VERSION} -f Dockerfile.release . --push
 
 clean:
-	rm -rf MacEthernetTapAgent *.dSYM build-* *.a *.pkg *.dmg *.o node/*.o controller/*.o service/*.o osdep/*.o ext/http-parser/*.o $(CORE_OBJS) $(ONE_OBJS) zerotier-one zerotier-idtool zerotier-selftest zerotier-cli zerotier doc/node_modules macui/build zt1_update_$(ZT_BUILD_PLATFORM)_$(ZT_BUILD_ARCHITECTURE)_*
+	rm -rf MacEthernetTapAgent *.dSYM build-* *.a *.pkg *.dmg *.o node/*.o nonfree/controller/*.o service/*.o osdep/*.o ext/http-parser/*.o $(CORE_OBJS) $(ONE_OBJS) zerotier-one zerotier-idtool zerotier-selftest zerotier-cli zerotier doc/node_modules zt1_update_$(ZT_BUILD_PLATFORM)_$(ZT_BUILD_ARCHITECTURE)_* rustybits/target/
+
+otel:
+	@echo "OpenTelemetry API headers are vendored (ext/opentelemetry-cpp-api-only); nothing to build."
 
 distclean:	clean
 
